@@ -50,9 +50,36 @@ Prompt:
 That got worse. It moved immediately to the geographically farthest-away point of the GPX course and stayed there for the whole length of the TCX file.
 Result: looks for gpxdata:distance. doesn't have it.
 
+Result: still fail
+
+Prompt: you can't do 
+curr_distance_elements = trackpoints[j].getElementsByTagName('extensions')[0].getElementsByTagName('gpxdata:distance')
+you still don't have that gpxdata:distance. you're going to have to track the elements as you go through the loop
+
+Result: back to jumping straight to the farthest-away point in the track
+
+
 """
 
 from xml.dom import minidom
+from math import radians, sin, cos, sqrt, atan2
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    # Calculate the distance between two coordinates using the Haversine formula
+    # Reference: https://en.wikipedia.org/wiki/Haversine_formula
+
+    # Convert latitude and longitude to radians
+    lat1_rad, lon1_rad, lat2_rad, lon2_rad = map(radians, [lat1, lon1, lat2, lon2])
+
+    # Haversine formula
+    dlon = lon2_rad - lon1_rad
+    dlat = lat2_rad - lat1_rad
+    a = sin(dlat/2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    radius = 6371  # Radius of the Earth in kilometers
+    distance = radius * c
+
+    return distance
 
 def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
     # Load TCX file
@@ -65,6 +92,18 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
 
     # Find all trackpoints in the GPX file
     trackpoints = gpx_root.getElementsByTagName('trkpt')
+
+    # Calculate cumulative distances in the GPX track
+    cumulative_distances = [0.0]
+    for i in range(1, len(trackpoints)):
+        lat1 = float(trackpoints[i-1].getAttribute('lat'))
+        lon1 = float(trackpoints[i-1].getAttribute('lon'))
+        lat2 = float(trackpoints[i].getAttribute('lat'))
+        lon2 = float(trackpoints[i].getAttribute('lon'))
+
+        distance = haversine_distance(lat1, lon1, lat2, lon2)
+        cumulative_distance = cumulative_distances[i-1] + distance
+        cumulative_distances.append(cumulative_distance)
 
     # Iterate over TCX trackpoints
     for i, trackpoint in enumerate(tcx_root.getElementsByTagName('Trackpoint')):
@@ -80,33 +119,29 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
             # Find the corresponding GPX trackpoints based on distance
             prev_trackpoint = None
             next_trackpoint = None
-            for j in range(len(trackpoints)):
-                curr_distance_elements = trackpoints[j].getElementsByTagName('extensions')[0].getElementsByTagName('gpxdata:distance')
-                curr_distance = float(curr_distance_elements[0].firstChild.nodeValue) if curr_distance_elements else None
-                if curr_distance is not None and curr_distance > distance:
+            prev_cumulative_distance = None
+            next_cumulative_distance = None
+
+            for j in range(len(cumulative_distances)):
+                if distance <= cumulative_distances[j]:
                     prev_trackpoint = trackpoints[j-1]
                     next_trackpoint = trackpoints[j]
+                    prev_cumulative_distance = cumulative_distances[j-1]
+                    next_cumulative_distance = cumulative_distances[j]
                     break
 
             if prev_trackpoint is not None and next_trackpoint is not None:
-                # Extract latitude, longitude, and elevation from GPX trackpoints
+                # Interpolate latitude, longitude, and elevation
+                ratio = (distance - prev_cumulative_distance) / (next_cumulative_distance - prev_cumulative_distance)
                 lat1 = float(prev_trackpoint.getAttribute('lat'))
                 lon1 = float(prev_trackpoint.getAttribute('lon'))
-                elevation1_elements = prev_trackpoint.getElementsByTagName('ele')
-                elevation1 = float(elevation1_elements[0].firstChild.nodeValue) if elevation1_elements else None
-
                 lat2 = float(next_trackpoint.getAttribute('lat'))
                 lon2 = float(next_trackpoint.getAttribute('lon'))
-                elevation2_elements = next_trackpoint.getElementsByTagName('ele')
-                elevation2 = float(elevation2_elements[0].firstChild.nodeValue) if elevation2_elements else None
 
-                # Interpolate latitude, longitude, and elevation
-                ratio = (distance - curr_distance) / (curr_distance - distance)
                 lat = lat1 + (lat2 - lat1) * ratio
                 lon = lon1 + (lon2 - lon1) * ratio
-                elevation = elevation1 + (elevation2 - elevation1) * ratio if elevation1 is not None and elevation2 is not None else None
 
-                # Create latitude, longitude, and elevation elements
+                # Create latitude and longitude elements
                 lat_element = tcx_doc.createElement('LatitudeDegrees')
                 lat_text = tcx_doc.createTextNode(str(lat))
                 lat_element.appendChild(lat_text)
@@ -115,26 +150,16 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
                 lon_text = tcx_doc.createTextNode(str(lon))
                 lon_element.appendChild(lon_text)
 
-                if elevation is not None:
-                    elevation_element = tcx_doc.createElement('AltitudeMeters')
-                    elevation_text = tcx_doc.createTextNode(str(elevation))
-                    elevation_element.appendChild(elevation_text)
-
-                # Remove existing position and elevation elements from TCX trackpoint
+                # Remove existing position elements from TCX trackpoint
                 position_elements = trackpoint.getElementsByTagName('Position')
                 for position_element in position_elements:
                     trackpoint.removeChild(position_element)
-                elevation_elements = trackpoint.getElementsByTagName('AltitudeMeters')
-                for elevation_element in elevation_elements:
-                    trackpoint.removeChild(elevation_element)
 
-                # Add interpolated latitude, longitude, and elevation to TCX trackpoint
+                # Add interpolated latitude and longitude to TCX trackpoint
                 position_element = tcx_doc.createElement('Position')
                 position_element.appendChild(lat_element)
                 position_element.appendChild(lon_element)
                 trackpoint.appendChild(position_element)
-                if elevation is not None:
-                    trackpoint.appendChild(elevation_element)
 
     # Save the modified TCX file
     with open(output_file, 'w') as f:
