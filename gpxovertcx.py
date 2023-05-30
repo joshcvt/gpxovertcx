@@ -30,6 +30,15 @@ Result:
 
 Probably almost right, except it wants to update the nonexistent Position element instead of creating it.
 
+New prompt:
+
+Almost right. trackpoint.getElementsByTagName('Position')[0] returns an IndexError: list index out of 
+range error. Can you check for this and add a new Position element to the trackpoint element if that happens?
+
+Result:
+
+It doesn't have the distances right, but it produces workable XML that imports to Smashrun.
+
 """
 
 from xml.dom import minidom
@@ -80,10 +89,22 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
                 elevation_text = tcx_doc.createTextNode(str(elevation))
                 elevation_element.appendChild(elevation_text)
 
-                # Add latitude, longitude, and elevation to TCX trackpoint
-                position_element = trackpoint.getElementsByTagName('Position')[0]
+                # Create position element
+                position_element = tcx_doc.createElement('Position')
                 position_element.appendChild(lat_element)
                 position_element.appendChild(lon_element)
+
+                # Add position and elevation to TCX trackpoint
+                trackpoint.appendChild(position_element)
+                trackpoint.appendChild(elevation_element)
+
+            else:
+                # Create empty position and elevation elements
+                position_element = tcx_doc.createElement('Position')
+                elevation_element = tcx_doc.createElement('AltitudeMeters')
+
+                # Add empty position and elevation to TCX trackpoint
+                trackpoint.appendChild(position_element)
                 trackpoint.appendChild(elevation_element)
 
     # Save the modified TCX file
