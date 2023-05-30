@@ -21,31 +21,40 @@ you use this same logic, but use xml.etree.ElementTree to parse the GPX instead 
 
 Result:
 with some debug statements (not captured), it's finding zero elements of trkpt or Trackpoint.
+
+New prompt:
+
+Do it with minidom instead, please.
+
+Result:
+
+Probably almost right, except it wants to update the nonexistent Position element instead of creating it.
+
 """
 
-import xml.etree.ElementTree as ET
+from xml.dom import minidom
 
 def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
     # Load TCX file
-    tcx_tree = ET.parse(tcx_file)
-    tcx_root = tcx_tree.getroot()
+    tcx_doc = minidom.parse(tcx_file)
+    tcx_root = tcx_doc.documentElement
 
     # Load GPX file
-    gpx_tree = ET.parse(gpx_file)
-    gpx_root = gpx_tree.getroot()
+    gpx_doc = minidom.parse(gpx_file)
+    gpx_root = gpx_doc.documentElement
 
     # Find all trackpoints in the GPX file
-    trackpoints = gpx_root.findall('.//trkpt')
+    trackpoints = gpx_root.getElementsByTagName('trkpt')
 
     # Iterate over TCX trackpoints
-    for i, trackpoint in enumerate(tcx_root.findall('.//Trackpoint')):
+    for i, trackpoint in enumerate(tcx_root.getElementsByTagName('Trackpoint')):
         # Get time from TCX trackpoint (if available)
-        time_element = trackpoint.find('.//Time')
-        time = time_element.text if time_element is not None else ''
+        time_elements = trackpoint.getElementsByTagName('Time')
+        time = time_elements[0].firstChild.nodeValue if time_elements else ''
 
         # Calculate distance from the start of the track
-        distance_element = trackpoint.find('.//DistanceMeters')
-        distance = float(distance_element.text) if distance_element is not None else None
+        distance_elements = trackpoint.getElementsByTagName('DistanceMeters')
+        distance = float(distance_elements[0].firstChild.nodeValue) if distance_elements else None
 
         if distance is not None:
             # Find the corresponding GPX trackpoint based on index
@@ -53,21 +62,33 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
                 gpx_trackpoint = trackpoints[i]
 
                 # Extract latitude, longitude, and elevation from GPX trackpoint
-                lat = float(gpx_trackpoint.attrib['lat'])
-                lon = float(gpx_trackpoint.attrib['lon'])
-                elevation_element = gpx_trackpoint.find('ele')
-                elevation = float(elevation_element.text) if elevation_element is not None else None
+                lat = float(gpx_trackpoint.getAttribute('lat'))
+                lon = float(gpx_trackpoint.getAttribute('lon'))
+                elevation_elements = gpx_trackpoint.getElementsByTagName('ele')
+                elevation = float(elevation_elements[0].firstChild.nodeValue) if elevation_elements else None
+
+                # Create latitude, longitude, and elevation elements
+                lat_element = tcx_doc.createElement('LatitudeDegrees')
+                lat_text = tcx_doc.createTextNode(str(lat))
+                lat_element.appendChild(lat_text)
+
+                lon_element = tcx_doc.createElement('LongitudeDegrees')
+                lon_text = tcx_doc.createTextNode(str(lon))
+                lon_element.appendChild(lon_text)
+
+                elevation_element = tcx_doc.createElement('AltitudeMeters')
+                elevation_text = tcx_doc.createTextNode(str(elevation))
+                elevation_element.appendChild(elevation_text)
 
                 # Add latitude, longitude, and elevation to TCX trackpoint
-                lat_element = ET.SubElement(trackpoint, 'Position/LatitudeDegrees')
-                lat_element.text = str(lat)
-                lon_element = ET.SubElement(trackpoint, 'Position/LongitudeDegrees')
-                lon_element.text = str(lon)
-                elevation_element = ET.SubElement(trackpoint, 'AltitudeMeters')
-                elevation_element.text = str(elevation)
+                position_element = trackpoint.getElementsByTagName('Position')[0]
+                position_element.appendChild(lat_element)
+                position_element.appendChild(lon_element)
+                trackpoint.appendChild(elevation_element)
 
     # Save the modified TCX file
-    tcx_tree.write(output_file)
+    with open(output_file, 'w') as f:
+        f.write(tcx_doc.toprettyxml(indent='\t'))
 
 # Usage example
 tcx_file = 'source.tcx'
