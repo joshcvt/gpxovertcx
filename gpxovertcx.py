@@ -58,6 +58,11 @@ you still don't have that gpxdata:distance. you're going to have to track the el
 
 Result: back to jumping straight to the farthest-away point in the track
 
+Next steps: sleeping a night, putting in some debug statements, actually reading code
+
+Results: it was measuring interpolated distance in km but trackpoint distance in m.
+Fixed that, slightly adjusted map to make sure total of interpolated points length was enough to cover track, reran, GREAT SUCCESS
+This was probably what it did with the first haversine iteration, but I was too tired to consider it at the time.
 
 """
 
@@ -104,6 +109,9 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
         distance = haversine_distance(lat1, lon1, lat2, lon2)
         cumulative_distance = cumulative_distances[i-1] + distance
         cumulative_distances.append(cumulative_distance)
+    
+    #for i in range(len(trackpoints)):
+    #    print(i, " ", cumulative_distances[i])
 
     # Iterate over TCX trackpoints
     for i, trackpoint in enumerate(tcx_root.getElementsByTagName('Trackpoint')):
@@ -113,7 +121,8 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
 
         # Calculate distance from the start of the track
         distance_elements = trackpoint.getElementsByTagName('DistanceMeters')
-        distance = float(distance_elements[0].firstChild.nodeValue) if distance_elements else None
+        # need distance in km though
+        distance = float(distance_elements[0].firstChild.nodeValue)/1000 if distance_elements else None
 
         if distance is not None:
             # Find the corresponding GPX trackpoints based on distance
@@ -160,6 +169,7 @@ def overlay_gpx_on_tcx(tcx_file, gpx_file, output_file):
                 position_element.appendChild(lat_element)
                 position_element.appendChild(lon_element)
                 trackpoint.appendChild(position_element)
+        #print(time, distance, lat, lon)
 
     # Save the modified TCX file
     with open(output_file, 'w') as f:
