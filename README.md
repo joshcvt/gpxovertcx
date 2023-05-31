@@ -1,4 +1,5 @@
 # gpxovertcx
+# by ChatGPT and @joshcvt
 
 This is a largely ChatGPT-written project, built after I ran a 5K in the morning in which my watch's GPS didn't get a lock before I needed to start.
 Since I knew the course exactly, I could draw the route on [Mapometer](http://us.mapometer.com), export it to GPX 1.1, carefully edit the height of 
